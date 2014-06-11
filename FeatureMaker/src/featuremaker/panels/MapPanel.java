@@ -1,0 +1,436 @@
+/*
+ * MapPanel.java
+ *
+ * Created on 3 de Outubro de 2005, 10:03
+ */
+
+package featuremaker.panels;
+
+import featuremaker.*;
+import featuremaker.misc.RAFile;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.geom.Point2D;
+import java.awt.image.*;
+import java.util.Iterator;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JViewport;
+
+/**
+ * The panel holding the map. Extends default JPanel, because of the paintComponent
+ * method.
+ *
+ * @author  matheus
+ */
+public class MapPanel extends JPanel 
+    implements MouseListener, MouseMotionListener, KeyListener {        
+
+    /** the bottom bar, for positions */
+    MapBar mapBar = null;
+        
+    /** zoom factors */
+    private float zoomFactors[] = { 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 4.0f, 6.0f};
+    /** the zoom index */
+    private int zoomIndex = 3; //means 1.0f 
+    /** possible map actions */
+    //static final int MP_
+        
+    /** possible states */
+    private static final int M_IDLE = 0, M_DRAW = 1;
+    
+    /** the state of the panel. We can be waiting command or creating feature
+     */
+    private int curSt = 0;
+    
+    /** the map image */
+    private BufferedImage mapImage;
+    private Dimension imageSize;
+    
+    /** we need these auxiliary variables for mouse drag events */
+    private Point sourceP, destP, lastP;
+    /** mouse coordinates in true position */
+    private Point mouseP = new Point();
+    
+    
+    /** Creates a new instance of MapPanel */
+    public MapPanel(MapBar mapBar) {
+        this.mapBar = mapBar;
+        
+        //these will be called by the window...
+        this.addMouseMotionListener(this);
+        this.addMouseListener(this);
+        this.requestFocusInWindow();
+        //this.addKeyListener(this);
+        this.setOpaque(false);
+    }
+    
+    /** sets the map image and panel size */
+    public void setMapImage(BufferedImage bi){
+        this.mapImage = bi;
+        imageSize = new Dimension(bi.getWidth(), bi.getHeight());
+        this.setPreferredSize(imageSize);
+        
+        //create 3 test features
+        //for (int i=0;i<3;i++){
+        //    Feature.fList.add(Feature.createRandomFeature(imageSize));
+        //}
+    }
+    
+    public void paintComponent(Graphics g){
+        if ((g == null) || (mapImage == null)){
+            return;
+        }
+        
+        // draw map
+        Graphics2D g2 = (Graphics2D)g;
+        float zoom = zoomFactors[zoomIndex];
+        g2.scale(zoom, zoom);
+        Font font = g2.getFont();
+        g2.setFont(font.deriveFont(font.getSize2D()/zoom));                
+        g2.drawImage(mapImage, 0, 0, null);
+        
+        //draw features
+        Feature.drawFeatures(g2, zoom);
+    }
+    
+    //-------------- mouse events ----------------
+    public void mouseExited(MouseEvent me){
+        mouseP.x = -1;
+        mouseP.y = -1;
+        adjustMapBar();
+    }
+    
+    public void mouseEntered(MouseEvent me){
+        if (mapImage == null){
+            return;
+        }
+        Point p = me.getPoint();
+        float zoom = zoomFactors[zoomIndex];        
+        mouseP.x = (int)(p.x / zoom);
+        mouseP.y = (int)(mapImage.getHeight() - (p.y / zoom) - 1);
+        adjustMapBar();
+
+    }
+
+    public void mouseClicked(MouseEvent me){
+        adjustMapBar();
+    }
+    
+    public void mousePressed(MouseEvent me){
+        //original point
+        Point op = me.getPoint();
+        float zoom = zoomFactors[zoomIndex];        
+        sourceP = new Point((int)(op.x / zoom), (int)(op.y / zoom));
+        lastP = sourceP;
+
+        //try to get a waypoint
+        Iterator<Feature> it = Feature.fList.iterator();
+        while (it.hasNext()){
+            Feature f = it.next();
+            if (f.clicked(sourceP)){
+                repaint();
+                return;
+            }
+/*            Iterator<Waypoint> wit = f.getWaypoints().iterator();
+            while (wit.hasNext()){
+                Waypoint w = wit.next();
+                if (w.clicked(sourceP)){
+                    repaint();
+                    return ;
+                }
+            }*/
+        }
+        //no object clicked, unselect everything
+        Waypoint.unselectAll();
+        repaint();
+        adjustMapBar();
+
+    }
+    
+    public void mouseReleased(MouseEvent me){
+        Point op = me.getPoint();
+        float zoom = zoomFactors[zoomIndex];        
+        destP = new Point((int)(op.x / zoom), (int)(op.y / zoom));
+        adjustMapBar();
+        
+    }
+
+    public void mouseMoved(MouseEvent me){
+        if ((mapImage == null)){
+            mouseP.x = -1;
+            mouseP.y = -1;
+            return;
+        }
+        Point p = me.getPoint();
+        float zoom = zoomFactors[zoomIndex];        
+        mouseP.x = (int)(p.x / zoom);
+        mouseP.y = (int)(imageSize.height - (p.y / zoom) - 1);
+        adjustMapBar();
+        
+    }
+    
+    public void mouseDragged(MouseEvent me){
+        //original point
+        Point op = me.getPoint();
+        float zoom = zoomFactors[zoomIndex];        
+        Point p = new Point((int)(op.x / zoom), (int)(op.y / zoom));
+
+        int xoff = p.x - lastP.x;
+        int yoff = p.y - lastP.y;
+        
+        boolean rightButton = ((me.getModifiersEx() & MouseEvent.BUTTON3_DOWN_MASK) != 0);
+        
+        //move all selected waypoints
+        if (rightButton){
+            //move features
+            Feature.translateSelected(xoff, yoff, imageSize);
+        }
+        else {
+            Waypoint.translateSelected(xoff, yoff, imageSize);
+        }
+        
+        lastP = p;
+        repaint();
+        adjustMapBar();        
+    }    
+    // -------- end mouse events --------------//
+    
+    // ----------- kb events ------------------//
+    public void keyPressed(KeyEvent ke){
+        if (mapImage == null){
+            return;
+        }
+        
+        //auxiliary booleans to help ctrl, shift and alt detection
+        boolean ctrlDown = false, shiftDown = false, altDown = false;
+        int cmask = KeyEvent.CTRL_DOWN_MASK, 
+            smask = KeyEvent.SHIFT_DOWN_MASK, 
+            amask = KeyEvent.ALT_DOWN_MASK;
+
+        ctrlDown = (ke.getModifiersEx() & cmask) != 0;
+        shiftDown = (ke.getModifiersEx() & smask) != 0;
+        altDown = (ke.getModifiersEx() & amask) != 0;        
+        
+
+
+        switch (ke.getKeyCode()){
+            case (KeyEvent.VK_T): {
+                //toggle all selected features
+                Feature.toggleSelected();                
+            }
+            break;
+            case (KeyEvent.VK_DELETE): {
+                if (shiftDown){
+                    Feature.deleteSelected();
+                }
+                else{
+                    Waypoint.deleteSelected();
+                }
+            }
+            break;
+            case (KeyEvent.VK_INSERT): {
+                if ((!shiftDown) && (Waypoint.existsSelected())){
+                    //inserts a new waypoint after the selected one
+                    //if this is the last wpt, insert tail
+                    Waypoint.insertAfterSelected(imageSize);                        
+                }
+                else {
+                    //viewport properties
+                    JViewport v = (JViewport)this.getParent();
+                    Point pul = v.getViewPosition(); //upper left
+                    Dimension d = v.getSize();
+
+                    //get view center
+                    float zoom = zoomFactors[zoomIndex];
+                    Point c = new Point(
+                        (int)((pul.x + (d.width / 2)) / zoom),
+                        (int)((pul.y + (d.height / 2))  / zoom)
+                    );
+
+
+                    //create a new feature at center of viewpoint
+                    Feature.insertNew(c, imageSize);
+                }
+            }
+            break;
+            case (KeyEvent.VK_S): {                
+                if (ctrlDown){
+                    //save features to file                    
+                    try {
+                        //save features to a file
+                        RAFile raf;
+                        Feature.pickFeaturesFile((java.awt.Component)this);
+                        Feature.createFeaturesFileBackup();
+                        raf = new RAFile(Feature.featuresFile, "rw");                
+                        Feature.saveAllTo(raf, imageSize, this);
+                    }
+                    catch (Exception e){
+                        System.out.println(e.getMessage());
+                    }
+                }
+            }
+            break;
+            case (KeyEvent.VK_L): {
+                if (ctrlDown){
+                    //load features
+                    Feature.loadFeaturesFile((java.awt.Component)this, imageSize);                    
+                }
+                else {
+                    //toggle labels for selected objects
+                    Waypoint.toggleLabel();
+                }
+            }
+            break;
+            case (KeyEvent.VK_PLUS): {
+                zoomIn();
+            }
+            break;
+            case (KeyEvent.VK_MINUS): {
+                zoomOut();
+            }
+            break;            
+            case (KeyEvent.VK_C): {
+                if (shiftDown && altDown){
+                    Feature.selectTrailChar(this);
+                }
+                else if (altDown){
+                    boolean ret = Feature.toggleTrailChar();
+                    String s = (ret) ? 
+                        "Trail char (" + Feature.getTrailChar() + ") usage enabled" :
+                        "Trail char disabled";
+                    
+                    JOptionPane.showMessageDialog(
+                        this,
+                        s,
+                        "Trail Char",
+                        JOptionPane.INFORMATION_MESSAGE
+                        );
+                }
+            }
+            break;
+            default: {
+                //some non handled codes....
+                switch (ke.getKeyChar()){
+                    case ('+'): {
+                        zoomIn();
+                    }
+                    break;
+                    case ('-'): {
+                        zoomOut();
+                    }
+                    break;            
+                }
+            }
+
+        }            
+        repaint();
+        adjustMapBar();
+    }
+    
+    public void keyReleased(KeyEvent ke){
+        
+    }
+    
+    public void keyTyped(KeyEvent ke){
+        
+    }
+    
+    // ---------- end kb events ---------------//
+    /** increases zoom factor */
+    public void zoomIn(){
+        Graphics2D g = (Graphics2D)this.getGraphics();
+        Point p = getViewCenter(true);
+        if (zoomIndex == (zoomFactors.length -1)){
+            //max zoom
+            return;
+        }
+        zoomIndex++;
+        float zoom = zoomFactors[zoomIndex];
+        setPreferredSize(new Dimension((int)(imageSize.width*zoom), (int)(imageSize.height*zoom)));
+        this.revalidate();
+        centerViewOn(p, true);
+    }
+    
+    /** decreases zoom factor */
+    public void zoomOut(){
+        Graphics2D g = (Graphics2D)this.getGraphics();
+        Point p = getViewCenter(true);
+        if (zoomIndex == 0){
+            //min zoom
+            return;
+        }
+        zoomIndex--;
+        float zoom = zoomFactors[zoomIndex];        
+        setPreferredSize(new Dimension((int)(imageSize.width*zoom), (int)(imageSize.height*zoom)));        
+        this.revalidate();
+        centerViewOn(p, true);
+    }
+    
+    /** returns the zoom factor */
+    public float getZoom(){
+        return zoomFactors[zoomIndex];        
+    }
+    
+    /** gets the viewport center. Useful for centering stuff
+     * @return viewport center
+     * @param az apply zoom?
+     */
+    public Point getViewCenter(boolean az){
+        float zoom = zoomFactors[zoomIndex];
+        float z = (az) ? zoom : 1.0f;
+        JViewport v = (JViewport)this.getParent();
+        Dimension d = v.getSize();
+        d.width /= z;
+        d.height /= z;        
+        Point upl = v.getViewPosition();
+        upl.x /= z;
+        upl.y /= z;
+        
+        return new Point((int)(upl.x + (d.width / 2)), (int)(upl.y + (d.height / 2)));
+    }
+    
+    /** center viewport on point 
+     * @param p the reference point
+     * @param az apply zoom?
+     */
+    public void centerViewOn(Point p, boolean az){
+        float zoom = zoomFactors[zoomIndex];        
+        float z = (az) ? zoom : 1.0f;
+        Point pz = new Point((int)(p.x * z), (int)(p.y * z));
+        JViewport v = (JViewport)this.getParent();
+        Dimension d = v.getSize();
+
+        //get view center
+        pz.x -= d.width / 2;
+        pz.y -= d.height / 2;
+        
+        v.setViewPosition(pz);
+    }
+    
+    /** returns the mouse position, using true coordinates(i.e, first quadrant)
+     * @return the mouse position, or null if mouse is outside or no map is loaded
+     */
+    public Point getMousePosition(){        
+        return mouseP;
+    }
+    
+    /** returns the position of the first waypoint selected. Uses first quadrant
+     * @return the coordinates of the first selected waypoint. If there is none
+     * returns null, also if there is no map
+     */
+    public Point getSelectedWaypointPosition(){
+        return Waypoint.getFirstSelectedWaypointRealPosition(imageSize);
+    }
+    
+    /** updates bottom bar values */
+    private void adjustMapBar(){
+        mapBar.setMouseWaypointZoom(
+            mouseP, 
+            Waypoint.getFirstSelectedWaypointRealPosition(imageSize),
+            zoomFactors[zoomIndex]
+        );
+    }
+}
+
+

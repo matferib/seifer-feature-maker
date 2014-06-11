@@ -1,0 +1,313 @@
+/*
+ * MapWindow.java
+ *
+ * Created on 3 de Outubro de 2005, 08:56
+ */
+
+package featuremaker.windows;
+
+import featuremaker.exceptions.CantLoadMapException;
+import featuremaker.panels.*;
+import featuremaker.dialogs.*;
+import fileFilters.ImageFiles;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.event.*;
+import java.io.File;
+import javax.imageio.ImageIO;
+import javax.swing.*;
+
+
+/**
+ * This is the window where the map is displayed. It consists of a scrollpane
+ * holding the panel with bitmap.
+ *
+ * @author  matheus
+ */
+public class MapWindow extends JFrame 
+    implements ActionListener, KeyListener
+    //, MouseListener, MouseMotionListener, MenuListener
+{
+    /** bottom bar panel */
+    private MapBar mapBar = new MapBar();
+    /** panel holding the map */
+    private MapPanel mapPanel = new MapPanel(mapBar);
+    /** scroll pane holding map panel */
+    private JScrollPane mapScrollPane = new JScrollPane(mapPanel);
+    /** a split panel for holding panels */
+    private JSplitPane mapSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+    /** menu */
+    private JMenuBar menuBar = new JMenuBar();
+    /** menu item labels */
+    String mainMenuLabels[] = {"Map", "Feature", "Waypoint", "About"};
+    /** menu itens associated with mainMenus */
+    String menuItemLabels[][] = {
+        { 
+            "Load Map",
+            "zoom in",
+            "zoom out" 
+        },
+        { 
+            "Load Features",
+            "Save Features",
+            "New",
+            "Delete",
+            "Toggle Type",
+            "Toggle Label",
+            "Toggle Trail Char"
+            //"Select Trail Char"
+        },
+        {
+            "Insert Waypoint",
+            "Delete Waypoint"
+        },
+        { 
+            "Help",
+            "Version" 
+        }
+    };
+    /** mnemonics */
+    KeyStroke menuItemKeyStrokes[][] = {
+        { 
+            KeyStroke.getKeyStroke("control M"),
+            KeyStroke.getKeyStroke('+'),
+            KeyStroke.getKeyStroke('-')
+        },
+        { 
+            KeyStroke.getKeyStroke("control L"),
+            KeyStroke.getKeyStroke("control S"),
+            KeyStroke.getKeyStroke("shift INSERT"), 
+            KeyStroke.getKeyStroke("shift DELETE"), 
+            KeyStroke.getKeyStroke("shift T"), 
+            KeyStroke.getKeyStroke("shift L"),
+            KeyStroke.getKeyStroke("alt C")
+            //KeyStroke.getKeyStroke("shift alt C")
+        },
+        {
+            KeyStroke.getKeyStroke("INSERT"),
+            KeyStroke.getKeyStroke("DELETE")
+        },
+        {
+            KeyStroke.getKeyStroke("F1"),
+            KeyStroke.getKeyStroke("control E")
+        }
+    };    
+    /** main menu */
+    private JMenu mainMenus[] = new JMenu[mainMenuLabels.length];
+    /** menuitens */
+    private JMenuItem menuItens[][] = 
+        new JMenuItem[mainMenuLabels.length][];
+    
+    /** Creates a new instance of MapWindow */
+    public MapWindow(){
+        this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        
+        // window container
+        Container c = this.getContentPane();
+        //adding scroll pane and bottom bar to split
+        mapSplitPane.setResizeWeight(1.0);
+        mapSplitPane.setTopComponent(mapScrollPane);
+        mapSplitPane.setBottomComponent(mapBar);
+        c.add(mapSplitPane);
+        
+        //menus
+        for (int i=0;i<mainMenuLabels.length;i++){
+            mainMenus[i] = new JMenu(mainMenuLabels[i]);
+            menuItens[i] = new JMenuItem[mainMenuLabels[i].length()];
+            for (int j=0;j<menuItemLabels[i].length;j++){
+                menuItens[i][j] = new JMenuItem(menuItemLabels[i][j]);
+                if (menuItemKeyStrokes[i][j] != null){
+                    menuItens[i][j].setAccelerator(
+                        menuItemKeyStrokes[i][j]
+                    );
+                }
+                menuItens[i][j].addActionListener(this);
+                mainMenus[i].add(menuItens[i][j]);
+            }
+            menuBar.add(mainMenus[i]);
+        }        
+        this.setJMenuBar(menuBar);
+        
+        
+        //show window, default properties
+        resetProperties();
+        //listeners
+        resetListeners();
+        
+        //select map image
+        selectMap();
+    }
+    
+    /** sets the window properties, such as title, size, position etc
+     */
+    private void resetProperties(){
+        this.setTitle("Map Window: no image");
+        this.setSize(800, 600);
+        this.setVisible(true);
+        this.requestFocusInWindow();
+    }
+    
+    private void resetListeners(){
+        //this.addKeyListener(this);
+    }
+    
+    /* loads the map file
+     * @param file the map file
+     * @throw Exception if can load map
+     */
+    public void loadMap(File file) throws CantLoadMapException {
+        try {            
+            mapPanel.setMapImage(ImageIO.read(file));
+            this.setTitle(file.toString());
+            mapScrollPane.revalidate();
+            this.repaint();
+        }
+        catch (Exception e){
+            throw new CantLoadMapException(e.getMessage());
+        }
+        
+    }
+    
+    
+    // key events
+    public void keyPressed(KeyEvent k){
+        //auxiliary booleans to help ctrl, shift and alt detection
+        boolean ctrlDown = false, shiftDown = false, altDown = false;
+        int cmask = KeyEvent.CTRL_DOWN_MASK, 
+            smask = KeyEvent.SHIFT_DOWN_MASK, 
+            amask = KeyEvent.ALT_DOWN_MASK;
+        
+        ctrlDown = (k.getModifiersEx() & cmask) != 0;
+        shiftDown = (k.getModifiersEx() & smask) != 0;
+        altDown = (k.getModifiersEx() & amask) != 0;
+
+        //keys
+        switch (k.getKeyCode()) {
+            case (KeyEvent.VK_M): {
+                if (ctrlDown){            
+                    selectMap();
+                }
+            }
+            break;
+            case (KeyEvent.VK_E): {
+                if (ctrlDown){
+                    VersionDialog.showVersionDialog((Component)this);
+                }
+            }
+            break;
+        }
+        
+        mapPanel.keyPressed(k);
+    }
+    
+    public void keyTyped(KeyEvent k){
+        
+    }
+    
+    public void keyReleased(KeyEvent k){
+        
+    }
+    
+    /** open a window to select the current map */
+    private void selectMap(){
+        //load map
+        JFileChooser fc = new JFileChooser();
+        fc.setFileFilter(new ImageFiles());
+        fc.showOpenDialog(this);
+        File f = fc.getSelectedFile();
+        if (f != null){
+            try {
+                loadMap(f);
+            }
+            catch (CantLoadMapException clm){
+                System.out.println("Cant load map: " + clm.getMessage());
+            }
+        }
+        
+    }
+    
+    //-------------- mouse events ----------------
+    /*public void mouseExited(MouseEvent me){
+        //mapPanel.mouseExited(me);
+    }
+    
+    public void mouseEntered(MouseEvent me){
+        //mapPanel.mouseEntered(me);        
+        mapBar.setMouseAndWaypointPosition(
+            mapPanel.getMousePosition(),
+            mapPanel.getSelectedWaypointPosition()
+        );
+    }
+
+    public void mouseClicked(MouseEvent me){
+        //mapPanel.mouseClicked(me);
+    }
+    
+    public void mousePressed(MouseEvent me){
+        //mapPanel.mousePressed(me);
+        mapBar.setMouseAndWaypointPosition(
+            mapPanel.getMousePosition(),
+            mapPanel.getSelectedWaypointPosition()
+        );
+    }
+    
+    public void mouseReleased(MouseEvent me){
+        //mapPanel.mouseReleased(me);
+    }
+    
+    public void mouseDragged(MouseEvent me){
+        //mapPanel.mouseDragged(me);
+    }
+    
+    public void mouseMoved(MouseEvent me){
+        //mapPanel.mouseMoved(me);        
+        mapBar.setMouseAndWaypointPosition(
+            mapPanel.getMousePosition(),
+            mapPanel.getSelectedWaypointPosition()
+        );        
+    }*/
+    // -------- end mouse events --------------//
+    
+    // ---------- menu listener stuff -------------//
+    public void actionPerformed(ActionEvent ae){
+        JMenuItem mi = null;
+        Object o = ae.getSource();
+        for (int i=0;((i<mainMenuLabels.length) && (mi == null));i++){
+            for (int j=0;((j<mainMenuLabels[i].length()) && (mi == null));j++){
+                if (o == menuItens[i][j]){
+                    mi = menuItens[i][j];
+                }
+            }
+        }
+        
+        //no menu item selected
+        if (mi == null){
+            return;
+        }
+        KeyStroke ks = mi.getAccelerator();
+        if (ks == null){
+            return;
+        }
+        //pass the event forward
+        KeyEvent ke = new KeyEvent(
+            this,
+            KeyEvent.KEY_PRESSED, 
+            ae.getWhen(),
+            ks.getModifiers(),
+            ks.getKeyCode(),
+            ks.getKeyChar()
+        );
+        this.keyPressed(ke);
+        
+    }
+    // ---------- end menu listener -------------//
+}
+    
+
+
+
+
+
+
+
+

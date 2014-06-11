@@ -1,0 +1,19 @@
+/*
+ * TrailCharChooser.java
+ *
+ * Created on 8 de Outubro de 2005, 13:30
+ */
+
+package featuremaker.dialogs;
+
+/**
+ *
+ * @author  matheus
+ */
+public class TrailCharChooser {
+    
+    /** Creates a new instance of TrailCharChooser */
+    public TrailCharChooser() {
+    }
+    
+}
