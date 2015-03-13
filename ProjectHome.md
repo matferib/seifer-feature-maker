@@ -1,0 +1,1 @@
+Coded this long ago for theatre makers so they could edit features in a map. AFAIR there are only two types of features: roads and rivers.
